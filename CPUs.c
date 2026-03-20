@@ -159,11 +159,44 @@ void* NPPcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        if (p == NULL) {
+            pthread_mutex_lock(&(svars->readyQLock));
+
+
+            //if readyQ empty, stays idle 
+            if(svars->readyQ.head == NULL) {
+                p = NULL;
+                printf("No process to schedule\n");
+            }
+
+            else{
+                int priorityIndex = qPriority(&(svars->readyQ));
+                p = qRemove(&(svars->readyQ), priorityIndex);
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p != NULL) {
+            p->burstRemaining--;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            }
+        }
         sem_post(svars->mainSem);
     }
 }
